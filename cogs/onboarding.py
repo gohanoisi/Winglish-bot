@@ -1,7 +1,8 @@
 import discord
 from discord.ext import commands
 from db import get_pool
-from utils import main_menu_view, info_embed
+from utils import info_embed
+from cogs.menu import MenuView
 
 GUILD_CATEGORY_NAME = "Winglish｜個人学習"
 
@@ -39,7 +40,7 @@ class Onboarding(commands.Cog):
             await con.execute("INSERT INTO users(user_id) VALUES($1) ON CONFLICT (user_id) DO NOTHING", str(member.id))
 
         # メインBAM送付（常に最新1つ方針の起点）
-        await ch.send(embed=info_embed("Winglish へようこそ", "学習を開始しましょう👇"), view=main_menu_view())
+        await ch.send(embed=info_embed("Winglish へようこそ", "学習を開始しましょう👇"), view=MenuView())
         return ch
 
 async def setup(bot: commands.Bot):

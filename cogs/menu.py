@@ -51,16 +51,23 @@ class ReadingMenuView(discord.ui.View):
         ]:
             self.add_item(discord.ui.Button(label=label, custom_id=cid))
         self.add_item(discord.ui.Button(label="戻る", style=discord.ButtonStyle.secondary, custom_id="back:main"))
-
 class Menu(commands.Cog):
     def __init__(self, bot): self.bot = bot
 
     @commands.Cog.listener()
     async def on_interaction(self, interaction: discord.Interaction):
-        if not interaction.type == discord.InteractionType.component: return
+        if interaction.type != discord.InteractionType.component:
+            return
         cid = interaction.data.get("custom_id", "")
         if cid == "back:main":
-            await interaction.response.edit_message(embed=info_embed("Winglish へようこそ","学習を開始しましょう👇"), view=MenuView())
+            await interaction.response.edit_message(
+                embed=info_embed("Winglish へようこそ", "学習を開始しましょう👇"),
+                view=MenuView()
+            )
+        # vocab/svocm/reading のサブメニューイベントを中継
+        elif cid.startswith("vocab:") or cid.startswith("svocm:") or cid.startswith("reading:"):
+            # 他の Cog に処理を任せる（何もしない）
+            pass  # discord.py が自動ルーティングする
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(Menu(bot))
