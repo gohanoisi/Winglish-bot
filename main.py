@@ -2,6 +2,7 @@
 import logging
 import sys
 from typing import Any
+import os
 
 try:
     import discord
@@ -41,6 +42,20 @@ class WinglishBot(commands.Bot):
 
         self.add_view(MenuView())
         logger.info("✅ 永続 View 登録完了")
+        
+        #--- スラッシュコマンド同期 ---
+        test_guild = os.getenv("TEST_GUILD_ID")
+        try:
+            if test_guild:
+                guild = discord.Object(id=int(test_guild))
+                self.tree.copy_global_to(guild=guild)
+                await self.tree.sync(guild=guild)
+                logger.info(f"✅ スラッシュコマンド同期完了（ギルド: {test_guild}）")
+            else:
+                await self.tree.sync()
+                logger.info("✅ スラッシュコマンド同期完了（グローバル）")
+        except Exception as e:
+            logger.error(f"❌ スラッシュコマンド同期失敗: {e}")
 
     async def on_ready(self) -> None:
         logger.info(f"✅ Logged in as {self.user} ({self.user.id})")
