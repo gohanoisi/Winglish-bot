@@ -3,6 +3,22 @@ from discord.ext import commands
 from db import get_pool
 from srs import update_srs
 
+async def safe_edit(interaction: discord.Interaction, **kwargs):
+    """このインタラクションのメッセージを安全に編集する"""
+    try:
+        if not interaction.response.is_done():
+            # まだレスポンスしていない場合は edit_message でOK
+            await interaction.response.edit_message(**kwargs)
+            return
+    except Exception:
+        pass
+    # すでにレスポンス済みの場合
+    try:
+        await interaction.edit_original_response(**kwargs)
+    except Exception:
+        # それもダメなら元メッセージを直接編集
+        await interaction.message.edit(**kwargs)
+
 # 10問提示ビュー（1問ごとにEmbed更新）
 class VocabSessionView(discord.ui.View):
     def __init__(self, batch_id, items):
@@ -14,10 +30,9 @@ class VocabSessionView(discord.ui.View):
     async def send_current(self, interaction: discord.Interaction):
         if self.index >= len(self.items):
             # 結果
-            await interaction.response.edit_message(
-                embed=discord.Embed(title="完了", description="10問が終了しました。メインメニューへ戻れます。"),
-                view=None
-            )
+            await safe_edit(interaction,
+                            embed=discord.Embed(title="完了", description="10問が終了しました。メインメニューへ戻れます。"),
+                            view=None)
             return
 
         w = self.items[self.index]
@@ -27,10 +42,7 @@ class VocabSessionView(discord.ui.View):
         v.add_item(discord.ui.Button(label="覚えた(◎)", style=discord.ButtonStyle.success, custom_id=f"vocab:known:{w['word_id']}"))
         v.add_item(discord.ui.Button(label="忘れそう(△)", style=discord.ButtonStyle.secondary, custom_id=f"vocab:unsure:{w['word_id']}"))
         v.add_item(discord.ui.Button(label="▶ 次へ", style=discord.ButtonStyle.primary, custom_id=f"vocab:next"))
-        try:
-            await interaction.response.edit_message(embed=e, view=v)
-        except discord.InteractionResponded:
-            await interaction.message.edit(embed=e, view=v)
+        await safe_edit(interaction, embed=e, view=v)
 
 class Vocab(commands.Cog):
     def __init__(self, bot): self.bot = bot
@@ -57,6 +69,9 @@ class Vocab(commands.Cog):
 
     async def start_ten(self, interaction: discord.Interaction):
         user_id = str(interaction.user.id)
+        
+        # まず defer（この後は edit_original_response で編集する）
+        await interaction.response.defer(thinking=False)
         pool = await get_pool()
         async with pool.acquire() as con:
             # SRS/正答率/新規率を考慮して10語抽出（簡易：ランダム＋未学習優先）
@@ -66,8 +81,8 @@ class Vocab(commands.Cog):
 
         # セッション保存
         view = VocabSessionView(batch_id, items)
-        await interaction.response.edit_message(embed=discord.Embed(title="英単語 10問"), view=None)
-        await interaction.followup.send(content="10問を開始します。", ephemeral=True)
+        # ここでは「英単語 10問」に一旦置き換え（optional）
+        await interaction.edit_original_response(embed=discord.Embed(title="英単語 10問"), view=None)
         await view.send_current(interaction)
 
         # バッチ登録
@@ -84,6 +99,7 @@ class Vocab(commands.Cog):
         user_id = str(interaction.user.id)
         quality = 5 if "known" in cid else 2
         word_id = int(cid.split(":")[-1])
+        await interaction.response.defer(thinking=False)
 
         # SRS更新
         pool = await get_pool()
@@ -108,7 +124,6 @@ class Vocab(commands.Cog):
                 VALUES($1,'vocab',$2, $3::jsonb)
             """, user_id, word_id, {"known": quality==5})
 
-        await interaction.response.defer()
         await self.next_item(interaction)
 
     async def next_item(self, interaction: discord.Interaction):
@@ -121,6 +136,7 @@ class Vocab(commands.Cog):
 
     async def prevprev_test(self, interaction: discord.Interaction):
         user_id = str(interaction.user.id)
+        await interaction.response.defer(thinking=False)
         pool = await get_pool()
         async with pool.acquire() as con:
             # 2つ前のbatch_idを取得
@@ -130,13 +146,26 @@ class Vocab(commands.Cog):
                 ORDER BY created_at DESC LIMIT 3
             """, user_id)
         if len(rows) < 3:
-            await interaction.response.edit_message(embed=discord.Embed(title="前々回テスト", description="前々回のバッチがありません。"), view=None)
+            await interaction.edit_original_response(
+                embed=discord.Embed(
+                    title="前々回テスト",
+                    description=f"batch: {target}\n※4択テストは今後実装（MVP後半）"
+                ),
+                view=None
+            )
             return
         target = rows[2]["batch_id"]
-        await interaction.response.edit_message(embed=discord.Embed(title="前々回テスト", description=f"batch: {target}\n※4択テストは今後実装（MVP後半）"), view=None)
+        await interaction.edit_original_response(
+            embed=discord.Embed(
+                title="前々回テスト",
+                description=f"batch: {target}\n※4択テストは今後実装（MVP後半）"
+            ),
+            view=None
+        )
 
     async def weak_test(self, interaction: discord.Interaction):
         user_id = str(interaction.user.id)
+        await interaction.response.defer(thinking=False)
         pool = await get_pool()
         async with pool.acquire() as con:
             rows = await con.fetch("""
@@ -148,11 +177,17 @@ class Vocab(commands.Cog):
                 LIMIT 10
             """, user_id)
         if not rows:
-            await interaction.response.edit_message(embed=discord.Embed(title="苦手テスト", description="対象がありません。"), view=None)
+            await interaction.edit_original_response(
+                embed=discord.Embed(title="苦手テスト", description="対象がありません。"),
+                view=None
+            )
             return
         # ここでは簡易表示
         words = "\n".join([f"- **{r['word']}** (`||{r['jp']}||`)" for r in rows])
-        await interaction.response.edit_message(embed=discord.Embed(title="苦手テスト（候補）", description=words), view=None)
+        await interaction.edit_original_response(
+            embed=discord.Embed(title="苦手テスト（候補）", description=words),
+            view=None
+        )
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(Vocab(bot))

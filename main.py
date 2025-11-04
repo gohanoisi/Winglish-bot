@@ -31,7 +31,7 @@ class WinglishBot(commands.Bot):
         await init_db()
         logger.info("✅ データベース初期化完了")
 
-        cogs = ["cogs.onboarding", "cogs.menu", "cogs.vocab", "cogs.svocm", "cogs.reading"]
+        cogs = ["cogs.onboarding", "cogs.menu", "cogs.vocab", "cogs.svocm", "cogs.reading", "cogs.admin"]
         for cog in cogs:
             try:
                 await self.load_extension(cog)
