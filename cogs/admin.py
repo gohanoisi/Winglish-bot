@@ -74,6 +74,21 @@ class WinglishAdmin(commands.Cog):
     @group.command(name="version", description="Botのバージョン/起動確認")
     async def version(self, interaction: discord.Interaction):
         await interaction.response.send_message("Winglish-bot / admin-cog v1.0", ephemeral=True)
+        
+    @group.command(name="diag_vocab", description="語彙テーブルの件数とサンプルを表示")
+    async def diag_vocab(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        from db import get_pool
+        pool = await get_pool()
+        async with pool.acquire() as con:
+            n = await con.fetchval("SELECT COUNT(*) FROM words")
+            sample = await con.fetch("""
+                SELECT word_id, word, jp, pos
+                FROM words ORDER BY word_id ASC LIMIT 5
+            """)
+        lines = [f"{r['word_id']}: {r['word']} / {r['jp']} / {r.get('pos') or '-'}" for r in sample]
+        msg = f"words 件数: **{n}**\n" + ("\n".join(lines) if lines else "(サンプルなし)")
+        await interaction.followup.send(msg, ephemeral=True)
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(WinglishAdmin(bot))

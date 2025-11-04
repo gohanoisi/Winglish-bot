@@ -4,6 +4,10 @@ import asyncio
 import asyncpg
 from config import DATABASE_URL
 
+from dotenv import load_dotenv
+load_dotenv()
+
+
 async def load_words():
     # 接続プール作成
     pool = await asyncpg.create_pool(DATABASE_URL, min_size=1, max_size=5)
