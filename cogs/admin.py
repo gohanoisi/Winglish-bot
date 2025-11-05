@@ -1,6 +1,7 @@
 import discord
 from discord import app_commands
 from discord.ext import commands
+import re
 
 from utils import info_embed
 from cogs.menu import MenuView  # callback付きメインメニュー
@@ -11,6 +12,18 @@ def is_manager():
         perms = inter.user.guild_permissions
         return perms.administrator or perms.manage_channels
     return app_commands.check(lambda i: predicate(i))
+
+def _slugify_channel(name: str) -> str:
+    # Discordのチャンネル命名に合わせて簡易スラグ化
+    s = name.lower()
+    s = re.sub(r"\s+", "-", s)
+    s = re.sub(r"[^a-z0-9\-\_]", "", s)
+    s = re.sub(r"-{2,}", "-", s).strip("-")
+    if not s:
+        s = "user"
+    return f"winglish-{s}"
+
+GUILD_CATEGORY_NAME = "Winglish｜個人学習"
 
 class WinglishAdmin(commands.Cog):
     """Winglish 運用・復旧コマンド"""
@@ -89,6 +102,51 @@ class WinglishAdmin(commands.Cog):
         lines = [f"{r['word_id']}: {r['word']} / {r['jp']} / {r.get('pos') or '-'}" for r in sample]
         msg = f"words 件数: **{n}**\n" + ("\n".join(lines) if lines else "(サンプルなし)")
         await interaction.followup.send(msg, ephemeral=True)
+
+    @group.command(name="create_channel", description="指定ユーザーの学習鍵チャンネルを作成（ニックネーム名）")
+    @app_commands.describe(user="対象ユーザー（@メンション または 検索）")
+    async def create_channel(self, interaction: discord.Interaction, user: discord.Member):
+        await interaction.response.defer(ephemeral=True)
+
+        guild = interaction.guild
+        member = user
+
+        # ニックネーム優先、なければ表示名
+        nick = member.nick or member.display_name or member.name
+        ch_name = _slugify_channel(nick)
+
+        # カテゴリ確保
+        category = discord.utils.get(guild.categories, name=GUILD_CATEGORY_NAME)
+        if category is None:
+            category = await guild.create_category(GUILD_CATEGORY_NAME)
+
+        # 既存チェック
+        exist = discord.utils.get(category.channels, name=ch_name)
+        if exist:
+            await interaction.followup.send(f"ℹ️ 既に存在します: <#{exist.id}>", ephemeral=True)
+            return
+
+        overwrites = {
+            guild.default_role: discord.PermissionOverwrite(read_messages=False),
+            member: discord.PermissionOverwrite(read_messages=True, send_messages=True),
+            guild.me: discord.PermissionOverwrite(read_messages=True, send_messages=True),
+        }
+        ch = await guild.create_text_channel(ch_name, category=category, overwrites=overwrites)
+
+        # DB users にも反映（upsert）
+        from db import get_pool
+        pool = await get_pool()
+        async with pool.acquire() as con:
+            await con.execute(
+                "INSERT INTO users(user_id, channel_id) VALUES($1,$2) "
+                "ON CONFLICT (user_id) DO UPDATE SET channel_id=$2",
+                str(member.id), str(ch.id)
+            )
+
+        # メニューも置いておく
+        await ch.send(embed=info_embed("Winglish へようこそ", "学習を開始しましょう👇"), view=MenuView())
+
+        await interaction.followup.send(f"✅ 作成しました: <#{ch.id}>", ephemeral=True)
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(WinglishAdmin(bot))
