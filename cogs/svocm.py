@@ -77,7 +77,10 @@ class Svocm(commands.Cog):
             return
 
         sentence = row["sentence_en"]
-        e = discord.Embed(title="SVOCM 問題", description=f"{sentence}\n\n（ヒントは`||スポイラー||`で運用可）")
+        e = discord.Embed(
+            title="SVOCM 問題",
+            description=f"{sentence}\n\n（ヒントは ||スポイラー|| で運用可）"  
+        )
         view = discord.ui.View()
         modal = SvocmModal(sentence, row["item_id"])
         # モーダル起動ボタン
