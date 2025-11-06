@@ -4,3 +4,4 @@ __pycache__/
 venv/
 .env.local
 .DS_Store
+data/All-words-modified_2025-10-29_08-31-22.csv
