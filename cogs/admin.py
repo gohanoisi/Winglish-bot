@@ -90,27 +90,46 @@ class WinglishAdmin(commands.Cog):
 
         def _is_button_msg(msg: discord.Message) -> bool:
             """
-            ボタン（message components）が付いている自分のメッセージのみ True
-            discord.py: Message.components は ActionRow の配列で、各 row.components を見る
+            ボタン/セレクト等の message components が付いている
+            “Bot自身のメッセージ”のみ True。
+            discord.py の型差異（row.children / row.components / dict）に全対応。
             """
             if msg.author != self.bot.user:
                 return False
-            if not msg.components:
+
+            rows = getattr(msg, "components", None)
+            if not rows:
                 return False
-            try:
-                # v2系：row.components の要素は MessageComponent（.type で種類判定可能）
-                for row in msg.components:
-                    for comp in getattr(row, "components", []):
-                        # Button: type == 2
-                        if getattr(comp, "type", None) == discord.ComponentType.button.value:
-                            return True
-            except Exception:
-                # 念のため後方互換（dict形式で来ても拾う）
-                for row in msg.components:
-                    for comp in getattr(row, "components", []):
-                        t = (isinstance(comp, dict) and comp.get("type")) or getattr(comp, "type", None)
-                        if t == 2:
-                            return True
+
+            def _iter_row_components(row):
+                # 1) ActionRowオブジェクト: .children or .components
+                comps = getattr(row, "children", None)
+                if comps is None:
+                    comps = getattr(row, "components", None)
+                if comps is not None:
+                    for c in comps:
+                        yield c
+                    return
+                # 2) dict形式（API素通し）
+                if isinstance(row, dict):
+                    for c in row.get("components", []):
+                        yield c
+
+            for row in rows:
+                for comp in _iter_row_components(row):
+                    # comp.type が enum の場合 / int の場合 / dict の場合に対応
+                    t = None
+                    if isinstance(comp, dict):
+                        t = comp.get("type")
+                    else:
+                        t = getattr(comp, "type", None)
+                        # enumなら .value を取り出す
+                        if t is not None and not isinstance(t, int):
+                            t = getattr(t, "value", t)
+
+                    if t in (2, 3):  # 2=Button, 3=SelectMenu（両方掃除対象に）
+                        return True
+
             return False
 
         deleted = 0
