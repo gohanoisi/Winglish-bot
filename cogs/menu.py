@@ -16,7 +16,36 @@ class MenuView(discord.ui.View):
 
     @discord.ui.button(label="長文読解", style=discord.ButtonStyle.primary, custom_id="menu:reading")
     async def reading_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self._replace_with_new_bam(interaction, info_embed("長文読解", "TOEIC/共通テスト/英検1級 から選択"), ReadingMenuView())
+        # 1) まずは見た目を「生成中…」に更新
+        try:
+            await interaction.response.edit_message(
+                embed=info_embed("長文読解", "問題を生成中です…（数秒かかることがあります）"),
+                view=None
+            )
+        except discord.InteractionResponded:
+            try:
+                await interaction.message.edit(
+                    embed=info_embed("長文読解", "問題を生成中です…（数秒かかることがあります）"),
+                    view=None
+                )
+            except Exception:
+                pass
+
+        # 2) ReadingCog を取得して、既存のコマンド実装を直接呼ぶ
+        rcog = interaction.client.get_cog("ReadingCog")
+        if rcog is None:
+            # 保険：Cog が無ければ案内して終了
+            await interaction.followup.send("❌ ReadingCog が見つかりませんでした。管理者に連絡してください。", ephemeral=True)
+            return
+
+        # command ctx を作って既存実装を再利用
+        ctx = await interaction.client.get_context(interaction.message)
+        try:
+            # 既存の !reading コマンドと同じ入口を使う（デフォルトは toeic）
+            await rcog.start_reading(ctx, kind="toeic")
+        except Exception as e:
+            await interaction.followup.send(f"❌ 出題に失敗しました: {e}", ephemeral=True)
+
 
     async def _replace_with_new_bam(self, interaction, embed, view):
         try:
