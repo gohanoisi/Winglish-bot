@@ -1,7 +1,6 @@
 import discord
 from discord.ext import commands
 from db import get_pool
-from dify import run_workflow
 from utils import info_embed
 
 class SvocmModal(discord.ui.Modal, title="SVOCM 解答"):
@@ -37,8 +36,7 @@ class SvocmModal(discord.ui.Modal, title="SVOCM 解答"):
             "user": str(interaction.user.id)
         }
         try:
-            res = await run_workflow(payload)
-            text = res.get("data", {}).get("outputs", {}).get("text") or str(res)
+            await interaction.response.send_message("（一時）SVOCMのDify採点は未設定です。ローカル採点で継続します。", ephemeral=True)
         except Exception as e:
             text = f"採点APIエラー: {e}"
 
