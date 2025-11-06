@@ -80,6 +80,59 @@ class WinglishAdmin(commands.Cog):
         )
         await interaction.followup.send(f"🧹 掃除 {deleted}件 → ✅ メニュー再掲", ephemeral=True)
 
+    @group.command(
+        name="restart",
+        description="画面を整頓してメニューを再掲（ボタン付きメッセージのみ掃除／履歴は残す）"
+    )
+    @is_manager()
+    async def restart(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+
+        def _is_button_msg(msg: discord.Message) -> bool:
+            """
+            ボタン（message components）が付いている自分のメッセージのみ True
+            discord.py: Message.components は ActionRow の配列で、各 row.components を見る
+            """
+            if msg.author != self.bot.user:
+                return False
+            if not msg.components:
+                return False
+            try:
+                # v2系：row.components の要素は MessageComponent（.type で種類判定可能）
+                for row in msg.components:
+                    for comp in getattr(row, "components", []):
+                        # Button: type == 2
+                        if getattr(comp, "type", None) == discord.ComponentType.button.value:
+                            return True
+            except Exception:
+                # 念のため後方互換（dict形式で来ても拾う）
+                for row in msg.components:
+                    for comp in getattr(row, "components", []):
+                        t = (isinstance(comp, dict) and comp.get("type")) or getattr(comp, "type", None)
+                        if t == 2:
+                            return True
+            return False
+
+        deleted = 0
+        try:
+            async for m in interaction.channel.history(limit=200):
+                if _is_button_msg(m):
+                    try:
+                        await m.delete()
+                        deleted += 1
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
+        from utils import info_embed
+        from cogs.menu import MenuView
+        await interaction.channel.send(
+            embed=info_embed("Winglish へようこそ", "学習を開始しましょう👇"),
+            view=MenuView()
+        )
+        await interaction.followup.send(f"🧹 ボタン付き {deleted} 件を整理 → ✅ メニュー再掲", ephemeral=True)
+
     @group.command(name="ping", description="疎通確認（Botの遅延を表示）")
     async def ping(self, interaction: discord.Interaction):
         await interaction.response.send_message(f"🏓 {round(self.bot.latency*1000)} ms", ephemeral=True)
